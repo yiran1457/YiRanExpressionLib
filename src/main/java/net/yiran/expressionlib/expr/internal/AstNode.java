@@ -8,6 +8,10 @@ import net.yiran.expressionlib.expr.Operator;
 /**
  * 编译后的表达式 AST。三元 {@link Conditional} 惰性：只递归选中分支；变量查找走原始
  * {@code double[]}（变量名编译期解析为下标），全程无拆装箱、无 hash。
+ *
+ * <p>二元运算分两类节点：12 个内置运算符走特化节点（{@link AddNode} 等，直接内联算术，
+ * 消除 {@code Operator.applyBinary → DoubleBinaryOperator.applyAsDouble} 的多态派发链）；
+ * 用户自定义运算符仍走通用 {@link BinaryNode}。两者都实现 {@link BinaryAstNode}，遍历时归一处理。
  */
 public sealed interface AstNode {
     double evaluate(double[] variables);
@@ -21,7 +25,7 @@ public sealed interface AstNode {
     private static void collectVariables(AstNode node, java.util.Set<String> names) {
         switch (node) {
             case VariableNode v -> names.add(v.name);
-            case BinaryNode b -> { collectVariables(b.left, names); collectVariables(b.right, names); }
+            case BinaryAstNode b -> { collectVariables(b.left(), names); collectVariables(b.right(), names); }
             case UnaryNode u -> collectVariables(u.operand, names);
             case FunctionNode f -> { for (AstNode a : f.arguments) collectVariables(a, names); }
             case Conditional c -> {
@@ -59,12 +63,131 @@ public sealed interface AstNode {
         }
     }
 
-    record BinaryNode(Operator operator, AstNode left, AstNode right) implements AstNode {
+    /**
+     * 二元节点公共接口：内置特化节点与用户通用 {@link BinaryNode} 都实现之，
+     * 供 {@link #collectVariables}/{@link #bindIndices} 归一遍历左/右子树。
+     */
+    sealed interface BinaryAstNode extends AstNode permits BinaryNode, AddNode, SubNode, MulNode,
+            DivNode, ModNode, PowNode, GtNode, LtNode, GeNode, LeNode, EqNode, NeNode {
+        AstNode left();
+        AstNode right();
+    }
+
+    /** 通用二元节点（用户自定义运算符用）。内置运算符在 {@code build} 时改走特化节点。 */
+    record BinaryNode(Operator operator, AstNode left, AstNode right) implements BinaryAstNode {
         @Override
         public double evaluate(double[] variables) {
             double a = left.evaluate(variables);
             double b = right.evaluate(variables);
             return operator.applyBinary(a, b);
+        }
+    }
+
+    record AddNode(AstNode left, AstNode right) implements BinaryAstNode {
+        @Override
+        public double evaluate(double[] variables) {
+            double a = left.evaluate(variables);
+            double b = right.evaluate(variables);
+            return a + b;
+        }
+    }
+
+    record SubNode(AstNode left, AstNode right) implements BinaryAstNode {
+        @Override
+        public double evaluate(double[] variables) {
+            double a = left.evaluate(variables);
+            double b = right.evaluate(variables);
+            return a - b;
+        }
+    }
+
+    record MulNode(AstNode left, AstNode right) implements BinaryAstNode {
+        @Override
+        public double evaluate(double[] variables) {
+            double a = left.evaluate(variables);
+            double b = right.evaluate(variables);
+            return a * b;
+        }
+    }
+
+    record DivNode(AstNode left, AstNode right) implements BinaryAstNode {
+        @Override
+        public double evaluate(double[] variables) {
+            double a = left.evaluate(variables);
+            double b = right.evaluate(variables);
+            return a / b;
+        }
+    }
+
+    record ModNode(AstNode left, AstNode right) implements BinaryAstNode {
+        @Override
+        public double evaluate(double[] variables) {
+            double a = left.evaluate(variables);
+            double b = right.evaluate(variables);
+            return a % b;
+        }
+    }
+
+    record PowNode(AstNode left, AstNode right) implements BinaryAstNode {
+        @Override
+        public double evaluate(double[] variables) {
+            double a = left.evaluate(variables);
+            double b = right.evaluate(variables);
+            return Math.pow(a, b);
+        }
+    }
+
+    record GtNode(AstNode left, AstNode right) implements BinaryAstNode {
+        @Override
+        public double evaluate(double[] variables) {
+            double a = left.evaluate(variables);
+            double b = right.evaluate(variables);
+            return a > b ? 1.0 : 0.0;
+        }
+    }
+
+    record LtNode(AstNode left, AstNode right) implements BinaryAstNode {
+        @Override
+        public double evaluate(double[] variables) {
+            double a = left.evaluate(variables);
+            double b = right.evaluate(variables);
+            return a < b ? 1.0 : 0.0;
+        }
+    }
+
+    record GeNode(AstNode left, AstNode right) implements BinaryAstNode {
+        @Override
+        public double evaluate(double[] variables) {
+            double a = left.evaluate(variables);
+            double b = right.evaluate(variables);
+            return a >= b ? 1.0 : 0.0;
+        }
+    }
+
+    record LeNode(AstNode left, AstNode right) implements BinaryAstNode {
+        @Override
+        public double evaluate(double[] variables) {
+            double a = left.evaluate(variables);
+            double b = right.evaluate(variables);
+            return a <= b ? 1.0 : 0.0;
+        }
+    }
+
+    record EqNode(AstNode left, AstNode right) implements BinaryAstNode {
+        @Override
+        public double evaluate(double[] variables) {
+            double a = left.evaluate(variables);
+            double b = right.evaluate(variables);
+            return a == b ? 1.0 : 0.0;
+        }
+    }
+
+    record NeNode(AstNode left, AstNode right) implements BinaryAstNode {
+        @Override
+        public double evaluate(double[] variables) {
+            double a = left.evaluate(variables);
+            double b = right.evaluate(variables);
+            return a != b ? 1.0 : 0.0;
         }
     }
 
@@ -118,7 +241,7 @@ public sealed interface AstNode {
     static void bindIndices(AstNode node, Object2IntOpenHashMap<String> nameToIndex) {
         switch (node) {
             case VariableNode v -> v.index = nameToIndex.getInt(v.name);
-            case BinaryNode b -> { bindIndices(b.left, nameToIndex); bindIndices(b.right, nameToIndex); }
+            case BinaryAstNode b -> { bindIndices(b.left(), nameToIndex); bindIndices(b.right(), nameToIndex); }
             case UnaryNode u -> bindIndices(u.operand, nameToIndex);
             case FunctionNode f -> { for (AstNode a : f.arguments) bindIndices(a, nameToIndex); }
             case Conditional c -> {

@@ -32,9 +32,16 @@ public final class Expression {
         this.ast = ast;
     }
 
-    /** 用已通过 {@link #setVariable} 设定的变量求值，缺失变量抛 {@link IllegalArgumentException}。 */
+    /**
+     * 用已通过 {@link #setVariable} 设定的变量求值。
+     *
+     * <p>变量完备性在 {@code build()} 期已保证：{@code referencedVariables ⊆ nameToIndex}
+     * （由 {@link ExpressionBuilder#build()} 按 {@code 变量名→下标} 映射构造，见
+     * {@link AstNode#bindIndices}）。故求值热路径不再逐项校验。未通过 {@link #setVariable}
+     * 赋值的变量以 {@code NaN} 体现（与 {@link #evaluateUnchecked} 契约一致）；如需显式校验，
+     * 调用 {@link #validate()}。
+     */
     public double evaluate() {
-        verifyAllPresent();
         return ast.evaluate(values);
     }
 
@@ -55,7 +62,6 @@ public final class Expression {
                 merged[idx] = v.doubleValue();
             }
         });
-        verifyAllPresent();
         return ast.evaluate(merged);
     }
 
@@ -112,13 +118,5 @@ public final class Expression {
 
     public String getExpressionString() {
         return original;
-    }
-
-    private void verifyAllPresent() {
-        for (String name : referencedVariables) {
-            if (!nameToIndex.containsKey(name)) {
-                throw new IllegalArgumentException("Unknown variable: " + name);
-            }
-        }
     }
 }
