@@ -103,59 +103,87 @@ public final class ExpressionBuilder {
 
     /** 编译表达式并返回可求值的 {@link Expression}。 */
     public Expression build() {
+        requireExpression();
+
+        Map<String, Function> allFunctions = mergeFunctions();
+        Map<String, Operator> allOperators = mergeOperators();
+        validateDefinitions(allFunctions);
+
+        AstNode ast = compile(allFunctions, allOperators);
+        Set<String> referencedVariables = AstNode.collectVariables(ast);
+        String[] names = buildVariableNames(referencedVariables);
+        Object2IntOpenHashMap<String> nameToIndex = indexVariables(names);
+
+        return new Expression(
+                expression,
+                names,
+                referencedVariables.toArray(new String[0]),
+                nameToIndex,
+                ast);
+    }
+
+    private void requireExpression() {
         if (expression.isBlank()) {
             throw new IllegalArgumentException("Expression is empty");
         }
+    }
 
-        Map<String, Function> mergedFunctions = Functions.builtins();
-        mergedFunctions.putAll(functions);
-        Map<String, Operator> mergedOperators = builtinOperators();
-        mergedOperators.putAll(operators);
+    private Map<String, Function> mergeFunctions() {
+        Map<String, Function> allFunctions = Functions.builtins();
+        allFunctions.putAll(functions);
+        return allFunctions;
+    }
 
-        validateUserFunctions(mergedFunctions);
-        validateConstants(mergedFunctions);
-        validateVariables(mergedFunctions, constants.keySet());
+    private Map<String, Operator> mergeOperators() {
+        Map<String, Operator> allOperators = new LinkedHashMap<>();
+        allOperators.put("+", Operators.ADD);
+        allOperators.put("-", Operators.SUB);
+        allOperators.put("*", Operators.MUL);
+        allOperators.put("/", Operators.DIV);
+        allOperators.put("%", Operators.MOD);
+        allOperators.put("^", Operators.POW);
+        allOperators.put(">", Operators.GT);
+        allOperators.put("<", Operators.LT);
+        allOperators.put(">=", Operators.GE);
+        allOperators.put("<=", Operators.LE);
+        allOperators.put("==", Operators.EQ);
+        allOperators.put("!=", Operators.NE);
+        allOperators.putAll(operators);
+        return allOperators;
+    }
 
-        var tokens = Tokenizer.tokenize(expression, mergedOperators, mergedFunctions.keySet(), constants);
-        AstNode ast = AstBuilder.build(tokens, mergedFunctions);
+    private AstNode compile(Map<String, Function> allFunctions,
+                            Map<String, Operator> allOperators) {
+        var tokens = Tokenizer.tokenize(
+                expression,
+                allOperators,
+                allFunctions.keySet(),
+                constants);
+        return AstBuilder.build(tokens, allFunctions);
+    }
 
-        Set<String> referenced = collectVariables(ast);
+    private String[] buildVariableNames(Set<String> referencedVariables) {
         Set<String> ordered = new LinkedHashSet<>(variableNames);
-        ordered.addAll(referenced);
-        String[] names = ordered.toArray(new String[0]);
-        String[] referencedArr = referenced.toArray(new String[0]);
+        ordered.addAll(referencedVariables);
+        return ordered.toArray(new String[0]);
+    }
 
+    private static Object2IntOpenHashMap<String> indexVariables(String[] names) {
         Object2IntOpenHashMap<String> nameToIndex = new Object2IntOpenHashMap<>(names.length);
         nameToIndex.defaultReturnValue(-1);
         for (int i = 0; i < names.length; i++) {
             nameToIndex.put(names[i], i);
         }
-
-        return new Expression(expression, names, referencedArr, nameToIndex, ast);
+        return nameToIndex;
     }
 
-    private static Set<String> collectVariables(AstNode node) {
-        return AstNode.collectVariables(node);
+    private void validateDefinitions(Map<String, Function> allFunctions) {
+        validateUserFunctions();
+        validateConstants(allFunctions);
+        validateVariables(allFunctions, constants.keySet());
     }
 
-    private Map<String, Operator> builtinOperators() {
-        Map<String, Operator> m = new LinkedHashMap<>();
-        m.put("+", Operators.ADD);
-        m.put("-", Operators.SUB);
-        m.put("*", Operators.MUL);
-        m.put("/", Operators.DIV);
-        m.put("%", Operators.MOD);
-        m.put("^", Operators.POW);
-        m.put(">", Operators.GT);
-        m.put("<", Operators.LT);
-        m.put(">=", Operators.GE);
-        m.put("<=", Operators.LE);
-        m.put("==", Operators.EQ);
-        m.put("!=", Operators.NE);
-        return m;
-    }
-
-    private void validateUserFunctions(Map<String, Function> merged) {
+    private void validateUserFunctions() {
         for (Function f : functions.values()) {
             if (f.getNumArguments() < 0) {
                 throw new IllegalArgumentException("Variadic functions are not supported: " + f.getName());

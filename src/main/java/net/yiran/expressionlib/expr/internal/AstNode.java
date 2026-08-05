@@ -23,17 +23,22 @@ public sealed interface AstNode {
     }
 
     private static void collectVariables(AstNode node, java.util.Set<String> names) {
-        switch (node) {
-            case VariableNode v -> names.add(v.name);
-            case BinaryAstNode b -> { collectVariables(b.left(), names); collectVariables(b.right(), names); }
-            case UnaryNode u -> collectVariables(u.operand, names);
-            case FunctionNode f -> { for (AstNode a : f.arguments) collectVariables(a, names); }
-            case Conditional c -> {
-                collectVariables(c.cond, names);
-                collectVariables(c.then, names);
-                collectVariables(c.otherwise, names);
+        if (node instanceof VariableNode) {
+            names.add(((VariableNode) node).name);
+        } else if (node instanceof BinaryAstNode binary) {
+            collectVariables(binary.left(), names);
+            collectVariables(binary.right(), names);
+        } else if (node instanceof UnaryNode) {
+            collectVariables(((UnaryNode) node).operand, names);
+        } else if (node instanceof FunctionNode) {
+            for (AstNode argument : ((FunctionNode) node).arguments) {
+                collectVariables(argument, names);
             }
-            default -> { }
+        } else if (node instanceof Conditional) {
+            Conditional conditional = (Conditional) node;
+            collectVariables(conditional.cond, names);
+            collectVariables(conditional.then, names);
+            collectVariables(conditional.otherwise, names);
         }
     }
 
@@ -239,17 +244,24 @@ public sealed interface AstNode {
 
     /** 构建后遍历 AST，按 {@code 名字→下标} 映射解析所有 {@link VariableNode} 的索引。 */
     static void bindIndices(AstNode node, Object2IntOpenHashMap<String> nameToIndex) {
-        switch (node) {
-            case VariableNode v -> v.index = nameToIndex.getInt(v.name);
-            case BinaryAstNode b -> { bindIndices(b.left(), nameToIndex); bindIndices(b.right(), nameToIndex); }
-            case UnaryNode u -> bindIndices(u.operand, nameToIndex);
-            case FunctionNode f -> { for (AstNode a : f.arguments) bindIndices(a, nameToIndex); }
-            case Conditional c -> {
-                bindIndices(c.cond, nameToIndex);
-                bindIndices(c.then, nameToIndex);
-                bindIndices(c.otherwise, nameToIndex);
+        if (node instanceof VariableNode) {
+            VariableNode variable = (VariableNode) node;
+            variable.index = nameToIndex.getInt(variable.name);
+        } else if (node instanceof BinaryAstNode) {
+            BinaryAstNode binary = (BinaryAstNode) node;
+            bindIndices(binary.left(), nameToIndex);
+            bindIndices(binary.right(), nameToIndex);
+        } else if (node instanceof UnaryNode) {
+            bindIndices(((UnaryNode) node).operand, nameToIndex);
+        } else if (node instanceof FunctionNode) {
+            for (AstNode argument : ((FunctionNode) node).arguments) {
+                bindIndices(argument, nameToIndex);
             }
-            default -> { }
+        } else if (node instanceof Conditional) {
+            Conditional conditional = (Conditional) node;
+            bindIndices(conditional.cond, nameToIndex);
+            bindIndices(conditional.then, nameToIndex);
+            bindIndices(conditional.otherwise, nameToIndex);
         }
     }
 }

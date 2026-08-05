@@ -4,9 +4,10 @@
 
 求值热路径全程原始 `double`，无 `Integer`/`Double` 装箱、无 hash 查找；支持三元条件运算符的**惰性求值**。
 
-- **Minecraft**: 1.21.1
+- **Minecraft**: Forge 1.20.1 / NeoForge 1.21.1
+- **Loader**: LowCodeFML
 - **NeoForge** (构建依赖)
-- **Java**: 21
+- **Java**: 17 bytecode (Java 21 build toolchain)
 - **fastutil**: 8.5.12
 
 ## 特性
@@ -94,11 +95,7 @@ new ExpressionBuilder("x > 0 ? (x > 1 ? 2 : 1) : 0")
 ## 自定义函数
 
 ```java
-// 通过函数式接口注册（0/1/2 参）
-new ExpressionBuilder("clamp(x, 0, 1)")
-        .variable("x")
-        .function("clamp", (a, lo, hi) -> Math.max(lo, Math.min(hi, a)))  // 需 3 参：子类化
-        .build();
+// 0/1/2 参数函数可以直接通过函数式接口注册。
 
 // 单参 / 双参 / 无参
 new ExpressionBuilder("square(x) + rnd()")

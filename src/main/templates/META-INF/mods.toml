@@ -1,5 +1,5 @@
 modLoader="lowcodefml"
-loaderVersion="${loader_version_range}"
+loaderVersion="${forge_loader_version_range}"
 license="${mod_license}"
 
 [[mods]]
@@ -11,15 +11,17 @@ YiRanExpressionLib
 '''
 
 [[dependencies.${mod_id}]]
-    modId="neoforge"
+    modId="forge"
     type="required"
-    versionRange="[${neo_version},)"
+    mandatory=true
+    versionRange="${forge_version_range}"
     ordering="NONE"
     side="BOTH"
 
 [[dependencies.${mod_id}]]
     modId="minecraft"
     type="required"
-    versionRange="${minecraft_version_range}"
+    mandatory=true
+    versionRange="${forge_minecraft_version_range}"
     ordering="NONE"
     side="BOTH"

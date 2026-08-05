@@ -42,9 +42,10 @@ public final class AstBuilder {
         AstNode left = parseUnary();
         while (true) {
             Token t = peek();
-            if (!(t instanceof Token.OperatorToken(Operator op))) {
+            if (!(t instanceof Token.OperatorToken)) {
                 break;
             }
+            Operator op = ((Token.OperatorToken) t).operator();
             int prec = op.getPrecedence();
             if (prec < minPrec) {
                 break;
@@ -66,7 +67,8 @@ public final class AstBuilder {
 
     private AstNode parseUnary() {
         Token t = peek();
-        if (t instanceof Token.OperatorToken(Operator op) && isUnaryContext()) {
+        if (t instanceof Token.OperatorToken && isUnaryContext()) {
+            Operator op = ((Token.OperatorToken) t).operator();
             String sym = op.getSymbol();
             if ("-".equals(sym) || "+".equals(sym)) {
                 advance();
@@ -80,7 +82,9 @@ public final class AstBuilder {
 
     private AstNode parsePower() {
         AstNode base = parsePrimary();
-        if (peek() instanceof Token.OperatorToken(Operator op) && "^".equals(op.getSymbol())) {
+        if (peek() instanceof Token.OperatorToken
+                && "^".equals(((Token.OperatorToken) peek()).operator().getSymbol())) {
+            Operator op = ((Token.OperatorToken) peek()).operator();
             advance();
             AstNode exponent = parseUnary();
             return binaryNode(op, base, exponent);
@@ -90,17 +94,17 @@ public final class AstBuilder {
 
     private AstNode parsePrimary() {
         Token t = peek();
-        if (t instanceof Token.NumberToken(double value)) {
+        if (t instanceof Token.NumberToken) {
             advance();
-            return new AstNode.NumberNode(value);
+            return new AstNode.NumberNode(((Token.NumberToken) t).value());
         }
         if (t instanceof Token.ConstantToken c) {
             advance();
             return new AstNode.NumberNode(c.value());
         }
-        if (t instanceof Token.VariableToken(String name)) {
+        if (t instanceof Token.VariableToken) {
             advance();
-            return new AstNode.VariableNode(name);
+            return new AstNode.VariableNode(((Token.VariableToken) t).name());
         }
         if (t instanceof Token.FunctionToken fn) {
             advance();
@@ -197,9 +201,10 @@ public final class AstBuilder {
             AstNode right = simplify(b.right());
             return simplifyBinary(b, left, right);
         }
-        if (node instanceof AstNode.UnaryNode(Operator operator, AstNode operand1)) {
-            AstNode operand = simplify(operand1);
-            return simplifyUnary(operator, operand);
+        if (node instanceof AstNode.UnaryNode) {
+            AstNode.UnaryNode unary = (AstNode.UnaryNode) node;
+            AstNode operand = simplify(unary.operand());
+            return simplifyUnary(unary.operator(), operand);
         }
         if (node instanceof AstNode.FunctionNode f) {
             AstNode[] args = f.arguments();
@@ -221,7 +226,8 @@ public final class AstBuilder {
             AstNode then = simplify(c.then());
             AstNode otherwise = simplify(c.otherwise());
             // 常量条件：按求值期同一谓词（0 或 NaN 为假）选分支，消除死分支。
-            if (cond instanceof AstNode.NumberNode(double cv)) {
+            if (cond instanceof AstNode.NumberNode) {
+                double cv = ((AstNode.NumberNode) cond).value();
                 return (cv == 0.0 || Double.isNaN(cv)) ? otherwise : then;
             }
             if (cond == c.cond() && then == c.then() && otherwise == c.otherwise()) {
@@ -273,11 +279,12 @@ public final class AstBuilder {
     private static AstNode simplifyUnary(Operator op, AstNode operand) {
         if (op == Operators.NEG) {
             // 常量取负；-(-x) -> x（消除双重否定）。
-            if (operand instanceof AstNode.NumberNode(double v)) {
-                return new AstNode.NumberNode(-v);
+            if (operand instanceof AstNode.NumberNode) {
+                return new AstNode.NumberNode(-((AstNode.NumberNode) operand).value());
             }
-            if (operand instanceof AstNode.UnaryNode(Operator operator, AstNode operand1) && operator == Operators.NEG) {
-                return operand1;
+            if (operand instanceof AstNode.UnaryNode
+                    && ((AstNode.UnaryNode) operand).operator() == Operators.NEG) {
+                return ((AstNode.UnaryNode) operand).operand();
             }
         } else if (op == Operators.POS) {
             // +x -> x；+常量 -> 常量。
@@ -288,21 +295,22 @@ public final class AstBuilder {
 
     /** 双常量折叠时按节点类型取值（特化节点直算，通用节点走 applyBinary）。 */
     private static double binaryValue(AstNode.BinaryAstNode node, double a, double b) {
-        return switch (node) {
-            case AstNode.AddNode ig -> a + b;
-            case AstNode.SubNode ig -> a - b;
-            case AstNode.MulNode ig -> a * b;
-            case AstNode.DivNode ig -> a / b;
-            case AstNode.ModNode ig -> a % b;
-            case AstNode.PowNode ig -> Math.pow(a, b);
-            case AstNode.GtNode ig -> a > b ? 1.0 : 0.0;
-            case AstNode.LtNode ig -> a < b ? 1.0 : 0.0;
-            case AstNode.GeNode ig -> a >= b ? 1.0 : 0.0;
-            case AstNode.LeNode ig -> a <= b ? 1.0 : 0.0;
-            case AstNode.EqNode ig -> a == b ? 1.0 : 0.0;
-            case AstNode.NeNode ig -> a != b ? 1.0 : 0.0;
-            case AstNode.BinaryNode bn -> bn.operator().applyBinary(a, b);
-        };
+        if (node instanceof AstNode.AddNode) return a + b;
+        if (node instanceof AstNode.SubNode) return a - b;
+        if (node instanceof AstNode.MulNode) return a * b;
+        if (node instanceof AstNode.DivNode) return a / b;
+        if (node instanceof AstNode.ModNode) return a % b;
+        if (node instanceof AstNode.PowNode) return Math.pow(a, b);
+        if (node instanceof AstNode.GtNode) return a > b ? 1.0 : 0.0;
+        if (node instanceof AstNode.LtNode) return a < b ? 1.0 : 0.0;
+        if (node instanceof AstNode.GeNode) return a >= b ? 1.0 : 0.0;
+        if (node instanceof AstNode.LeNode) return a <= b ? 1.0 : 0.0;
+        if (node instanceof AstNode.EqNode) return a == b ? 1.0 : 0.0;
+        if (node instanceof AstNode.NeNode) return a != b ? 1.0 : 0.0;
+        if (node instanceof AstNode.BinaryNode) {
+            return ((AstNode.BinaryNode) node).operator().applyBinary(a, b);
+        }
+        throw new IllegalStateException("Unknown binary node: " + node.getClass());
     }
 
     /** 化简后子节点若变化，用同类型重建（保留特化/通用区分）。 */
@@ -310,21 +318,22 @@ public final class AstBuilder {
         if (left == node.left() && right == node.right()) {
             return node;
         }
-        return switch (node) {
-            case AstNode.AddNode ig -> new AstNode.AddNode(left, right);
-            case AstNode.SubNode ig -> new AstNode.SubNode(left, right);
-            case AstNode.MulNode ig -> new AstNode.MulNode(left, right);
-            case AstNode.DivNode ig -> new AstNode.DivNode(left, right);
-            case AstNode.ModNode ig -> new AstNode.ModNode(left, right);
-            case AstNode.PowNode ig -> new AstNode.PowNode(left, right);
-            case AstNode.GtNode ig -> new AstNode.GtNode(left, right);
-            case AstNode.LtNode ig -> new AstNode.LtNode(left, right);
-            case AstNode.GeNode ig -> new AstNode.GeNode(left, right);
-            case AstNode.LeNode ig -> new AstNode.LeNode(left, right);
-            case AstNode.EqNode ig -> new AstNode.EqNode(left, right);
-            case AstNode.NeNode ig -> new AstNode.NeNode(left, right);
-            case AstNode.BinaryNode bn -> new AstNode.BinaryNode(bn.operator(), left, right);
-        };
+        if (node instanceof AstNode.AddNode) return new AstNode.AddNode(left, right);
+        if (node instanceof AstNode.SubNode) return new AstNode.SubNode(left, right);
+        if (node instanceof AstNode.MulNode) return new AstNode.MulNode(left, right);
+        if (node instanceof AstNode.DivNode) return new AstNode.DivNode(left, right);
+        if (node instanceof AstNode.ModNode) return new AstNode.ModNode(left, right);
+        if (node instanceof AstNode.PowNode) return new AstNode.PowNode(left, right);
+        if (node instanceof AstNode.GtNode) return new AstNode.GtNode(left, right);
+        if (node instanceof AstNode.LtNode) return new AstNode.LtNode(left, right);
+        if (node instanceof AstNode.GeNode) return new AstNode.GeNode(left, right);
+        if (node instanceof AstNode.LeNode) return new AstNode.LeNode(left, right);
+        if (node instanceof AstNode.EqNode) return new AstNode.EqNode(left, right);
+        if (node instanceof AstNode.NeNode) return new AstNode.NeNode(left, right);
+        if (node instanceof AstNode.BinaryNode) {
+            return new AstNode.BinaryNode(((AstNode.BinaryNode) node).operator(), left, right);
+        }
+        throw new IllegalStateException("Unknown binary node: " + node.getClass());
     }
 
     /** 加法的零元：+0.0 与 -0.0 均可（x±0 不改变 x 的符号，-0.0 例外见 SubNode）。 */

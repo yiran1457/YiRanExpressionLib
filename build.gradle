@@ -1,3 +1,5 @@
+import org.gradle.api.attributes.java.TargetJvmVersion
+
 plugins {
     id 'java-library'
     id 'maven-publish'
@@ -29,8 +31,17 @@ base {
     archivesName = mod_id
 }
 
-// Mojang ships Java 21 to end users in 1.21.1, so mods should target Java 21.
+// NeoForge 1.21.1 development requires a Java 21 toolchain. The common code
+// is emitted as Java 17 bytecode so it can also load on Forge 1.20.1.
 java.toolchain.languageVersion = JavaLanguageVersion.of(21)
+
+// Resolve the NeoForge userdev classpath as Java 21 while compiling the
+// loader-independent sources to the Java 17 class-file level below.
+configurations.named('compileClasspath') {
+    attributes {
+        attribute(TargetJvmVersion.TARGET_JVM_VERSION_ATTRIBUTE, 21)
+    }
+}
 
 neoForge {
     // Specify the version of NeoForge to use.
@@ -93,8 +104,8 @@ configurations {
 }
 
 dependencies {
-    implementation 'net.objecthunter:exp4j:0.4.8'
-    additionalRuntimeClasspath 'net.objecthunter:exp4j:0.4.8'
+    // Minecraft supplies fastutil at runtime on both target loaders.
+    compileOnly 'it.unimi.dsi:fastutil:8.5.12'
 }
 
 // This block of code expands all declared replace properties in the specified resource targets.
@@ -105,6 +116,9 @@ var generateModMetadata = tasks.register("generateModMetadata", ProcessResources
             minecraft_version_range: minecraft_version_range,
             neo_version            : neo_version,
             loader_version_range   : loader_version_range,
+            forge_minecraft_version_range: forge_minecraft_version_range,
+            forge_loader_version_range   : forge_loader_version_range,
+            forge_version_range          : forge_version_range,
             mod_id                 : mod_id,
             mod_name               : mod_name,
             mod_license            : mod_license,
@@ -137,6 +151,11 @@ publishing {
 
 tasks.withType(JavaCompile).configureEach {
     options.encoding = 'UTF-8' // Use the UTF-8 charset for Java compilation
+    options.release = 17
+}
+
+tasks.named('jar', Jar).configure {
+    archiveClassifier = 'universal'
 }
 
 // IDEA no longer automatically downloads sources/javadoc jars for dependencies, so we need to explicitly enable the behavior.
